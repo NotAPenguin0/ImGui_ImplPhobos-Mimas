@@ -1,2 +1,2 @@
 # ImGuiMimas
-Implementation for ImGui for the Mimas windowing backend
+Implementation for ImGui for the (Mimas windowing backend)[https://github.com/kociap/mimas]
