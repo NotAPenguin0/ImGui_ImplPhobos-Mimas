@@ -23,9 +23,12 @@ static bool g_MouseJustPressed[3] = {false, false, false};
 // Old user callbacks
 static mimas_window_key_callback g_PrevUserCallbackKey = nullptr;
 static mimas_window_mouse_button_callback g_PrevUserCallbackMouseButton = nullptr;
+static mimas_window_scroll_callback g_PrevUserCallbackScroll = nullptr;
+
 
 static void* g_PrevUserCallbackKeyData = nullptr;
 static void* g_PrevUserCallbackMouseButtonData = nullptr;
+static void* g_PrevUserCallbackScrollData = nullptr;
 
 static void ImGui_ImplMimas_KeyCallback(Mimas_Window* window, Mimas_Key key, 
     Mimas_Key_Action action, void* user_data) {
@@ -67,6 +70,16 @@ static void ImGui_ImplMimas_MouseButtonCallback(Mimas_Window* window, Mimas_Key 
     }
 }
 
+static void ImGui_ImplMimas_ScrollCallback(Mimas_Window* window, mimas_i32 x, mimas_i32 y, void*) {
+    if (g_PrevUserCallbackScroll) {
+        g_PrevUserCallbackScroll(window, x, y, g_PrevUserCallbackScrollData);
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.MouseWheelH += (float)x;
+    io.MouseWheel += (float)y;
+}
+
 bool ImGui_ImplMimas_InitForVulkan(Mimas_Window* window) {
     g_Window = window;
     g_Time = 0;
@@ -101,14 +114,18 @@ bool ImGui_ImplMimas_InitForVulkan(Mimas_Window* window) {
 
     Mimas_Callback prev_key_cb = mimas_get_window_key_callback(window);
     Mimas_Callback prev_mouse_button_cb = mimas_get_window_mouse_button_callback(window);
+    Mimas_Callback prev_scroll_cb = mimas_get_window_scroll_callback(window);
 
     g_PrevUserCallbackKey = (mimas_window_key_callback)prev_key_cb.callback;
     g_PrevUserCallbackKeyData = prev_key_cb.user_data;
     g_PrevUserCallbackMouseButton = (mimas_window_mouse_button_callback)prev_mouse_button_cb.callback;
     g_PrevUserCallbackMouseButtonData = prev_mouse_button_cb.user_data;
+    g_PrevUserCallbackScroll = (mimas_window_scroll_callback)prev_scroll_cb.callback;
+    g_PrevUserCallbackScrollData = prev_scroll_cb.user_data;
 
     mimas_set_window_key_callback(window, ImGui_ImplMimas_KeyCallback, nullptr);
     mimas_set_window_mouse_button_callback(window, ImGui_ImplMimas_MouseButtonCallback, nullptr);
+    mimas_set_window_scroll_callback(window, ImGui_ImplMimas_ScrollCallback, nullptr);
     
     return true;
 }
@@ -123,7 +140,6 @@ static void ImGui_ImplMimas_UpdateMousePosAndButtons() {
         g_MouseJustPressed[i] = false;
     }
 
-    ImVec2 const mouse_pos_backup = io.MousePos;
     io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
     io.MouseHoveredViewport = 0;
     ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
@@ -162,8 +178,6 @@ static void ImGui_ImplMimas_UpdateMousePosAndButtons() {
 void ImGui_ImplMimas_NewFrame() {
     ImGuiIO& io = ImGui::GetIO();
     IM_ASSERT(io.Fonts->IsBuilt() && "Font atlas not built! It is generally built by the renderer back-end. Missing call to renderer _NewFrame() function? e.g. ImGui_ImplOpenGL3_NewFrame().");
-    // TODO (compare with glfw impl)
-    int w, h;
     int display_w, display_h;
     mimas_get_window_content_size(g_Window, &display_w, &display_h);
     io.DisplaySize = ImVec2((float)display_w, (float)display_h);
@@ -171,13 +185,9 @@ void ImGui_ImplMimas_NewFrame() {
     io.DisplayFramebufferScale = ImVec2(1, 1);
 
     // Update deltatime
-    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>
-        (std::chrono::system_clock::now().time_since_epoch());
-    long long time_cnt = time.count();
-    // DeltaTime is in seconds, which is why we divide by 1000
-    io.DeltaTime = (g_Time > 0.0) ? ((float)(time_cnt - g_Time) / 1000.0f) : (float)(1.0f/60.0f);
-    io.DeltaTime = std::max(io.DeltaTime, 0.0001f);
-    g_Time = time_cnt;
+    auto time = mimas_get_time();
+    io.DeltaTime = 1.0f / 60.0f; // Make ImGui run at 60 fps
+    g_Time = time;
     ImGui_ImplMimas_UpdateMousePosAndButtons();
 }
 
@@ -185,4 +195,5 @@ void ImGui_ImplMimas_Shutdown() {
     // Reinstall old callbacks
     mimas_set_window_key_callback(g_Window, g_PrevUserCallbackKey, g_PrevUserCallbackKeyData);
     mimas_set_window_mouse_button_callback(g_Window, g_PrevUserCallbackMouseButton, g_PrevUserCallbackMouseButtonData);
+    mimas_set_window_scroll_callback(g_Window, g_PrevUserCallbackScroll, g_PrevUserCallbackScrollData);
 }
